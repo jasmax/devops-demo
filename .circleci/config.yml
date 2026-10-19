@@ -1,9 +1,6 @@
 version: 2.1
 
 jobs:
-  # ==========================================
-  # BUILD JOB - Compile and package
-  # ==========================================
   build:
     docker:
       - image: cimg/openjdk:21.0
@@ -27,9 +24,6 @@ jobs:
           paths:
             - target/*.jar
 
-  # ==========================================
-  # TEST JOB - Run automated tests
-  # ==========================================
   test:
     docker:
       - image: cimg/openjdk:21.0
@@ -49,9 +43,6 @@ jobs:
       - store_artifacts:
           path: target/surefire-reports
 
-  # ==========================================
-  # PUBLISH JOB - Build and push Docker image
-  # ==========================================
   publish:
     docker:
       - image: cimg/base:stable
@@ -64,30 +55,28 @@ jobs:
           name: Build Docker image
           command: |
             echo "Building Docker image..."
-            IMAGE_NAME="devops-demo:latest"
-            if [ -n "$DOCKER_USERNAME" ]; then
-              IMAGE_NAME="$DOCKER_USERNAME/devops-demo:latest"
-            else
-              echo "DOCKER_USERNAME is not set; building local image tag: $IMAGE_NAME"
-            fi
-            docker build -t "$IMAGE_NAME" .
+            docker build -t $DOCKER_USERNAME/devops-demo:latest .
       - run:
           name: Push to Docker Hub
           command: |
-            if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_TOKEN" ]; then
-              echo "DOCKER_USERNAME and DOCKER_TOKEN must be set in CircleCI context 'docker-hub'."
-              exit 1
-            fi
             echo "Logging in to Docker Hub..."
             echo $DOCKER_TOKEN | docker login -u $DOCKER_USERNAME --password-stdin
             echo "Pushing image to Docker Hub..."
             docker push $DOCKER_USERNAME/devops-demo:latest
 
-# ==========================================
-# WORKFLOW - Run jobs in sequence
-# ==========================================
+  deploy:
+    docker:
+      - image: cimg/node:lts
+    steps:
+      - run:
+          name: Redeploy latest image on Railway
+          command: |
+            echo "Asking Railway to redeploy the latest image..."
+            npx --yes @railway/cli redeploy --service "$RAILWAY_SERVICE_ID" --yes
+            echo "Railway is now pulling $DOCKER_USERNAME/devops-demo:latest from Docker Hub."
+
 workflows:
-  build_test_publish:
+  build_test_publish_deploy:
     jobs:
       - build
       - test:
@@ -97,3 +86,6 @@ workflows:
           context: docker-hub
           requires:
             - test
+      - deploy:
+          requires:
+            - publish
